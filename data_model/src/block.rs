@@ -174,6 +174,13 @@ impl SignedBlock {
         block.payload()
     }
 
+    /// Block transactions
+    #[inline]
+    pub fn transactions(&self) -> impl ExactSizeIterator<Item = &TransactionValue> {
+        let SignedBlock::V1(block) = self;
+        block.payload.transactions.iter()
+    }
+
     /// Used to inject faulty payload for testing
     #[cfg(feature = "transparent_api")]
     pub fn payload_mut(&mut self) -> &mut BlockPayload {
