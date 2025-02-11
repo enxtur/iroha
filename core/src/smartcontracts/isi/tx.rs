@@ -95,6 +95,148 @@ impl ValidQuery for FindTransactionsByAccountId {
     }
 }
 
+fn is_transaction_related_to_account(
+    wsv: &WorldStateView,
+    tx: &BlockTransactionRef,
+    account_id: &AccountId,
+) -> Result<bool, QueryExecutionFail> {
+    if *tx.authority() == *account_id {
+        return Ok(true);
+    }
+
+    let binding = tx.value();
+    let payload = binding.payload();
+
+    let metadata = &payload.metadata;
+    let option_value = metadata.get("involved_accounts");
+    if option_value.is_some() {
+        match option_value {
+            Some(value) => match value {
+                Value::Vec(vec_value) => {
+                    for value in vec_value {
+                        match value {
+                            Value::Id(id) => match id {
+                                IdBox::AccountId(involved_account_id) => {
+                                    if involved_account_id == account_id {
+                                        return Ok(true);
+                                    }
+                                }
+                                _ => {}
+                            },
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            },
+            None => {}
+        }
+    }
+
+    let executable: &Executable = payload.instructions();
+    match executable {
+        Executable::Instructions(instructions) => {
+            for instruction_expr in instructions {
+                match instruction_expr {
+                    InstructionExpr::Transfer(transfer_expr) => {
+                        let source_id_box = wsv
+                            .evaluate(&transfer_expr.source_id)
+                            .wrap_err("failed to evaluate source_id")
+                            .map_err(|e| QueryExecutionFail::Evaluate(e.to_string()))?;
+
+                        match source_id_box {
+                            IdBox::AssetId(asset_id) => {
+                                if asset_id.account_id == *account_id {
+                                    return Ok(true);
+                                }
+                            }
+                            _ => {}
+                        }
+
+                        let destination_id_box = wsv
+                            .evaluate(&transfer_expr.destination_id)
+                            .wrap_err("failed to evaluate destination_id")
+                            .map_err(|e| QueryExecutionFail::Evaluate(e.to_string()))?;
+
+                        match destination_id_box {
+                            IdBox::AccountId(involved_account_id) => {
+                                if involved_account_id == *account_id {
+                                    return Ok(true);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    InstructionExpr::Register(register_expr) => {
+                        let registrable_box = wsv
+                            .evaluate(&register_expr.object)
+                            .wrap_err("failed to evaluate account_id")
+                            .map_err(|e| QueryExecutionFail::Evaluate(e.to_string()))?;
+
+                        match registrable_box {
+                            RegistrableBox::Account(new_account) => {
+                                if new_account.id == *account_id {
+                                    return Ok(true);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    InstructionExpr::Mint(mint_expr) => {
+                        let value = wsv
+                            .evaluate(&mint_expr.destination_id)
+                            .wrap_err("failed to evaluate asset_id")
+                            .map_err(|e| QueryExecutionFail::Evaluate(e.to_string()))?;
+
+                        match value {
+                            IdBox::AssetId(asset_id) => {
+                                if asset_id.account_id == *account_id {
+                                    return Ok(true);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+impl ValidQuery for FindTransactionsByAccountIdInvolved {
+    #[metrics(+"find_transactions_by_account_id_involved")]
+    fn execute<'wsv>(
+        &self,
+        wsv: &'wsv WorldStateView,
+    ) -> Result<Box<dyn Iterator<Item = TransactionQueryOutput> + 'wsv>, QueryExecutionFail> {
+        let account_id = wsv
+            .evaluate(&self.account_id)
+            .wrap_err("Failed to get account id")
+            .map_err(|e| QueryExecutionFail::Evaluate(e.to_string()))?;
+
+        Ok(Box::new(
+            wsv.all_blocks()
+                .flat_map(BlockTransactionIter::new)
+                .filter_map(move |tx| {
+                    match is_transaction_related_to_account(wsv, &tx, &account_id) {
+                        Ok(true) => Some(TransactionQueryOutput {
+                            block_hash: tx.block_hash(),
+                            transaction: tx.value(),
+                        }),
+                        Ok(false) => None,
+                        Err(e) => {
+                            iroha_logger::error!("Error evaluating transaction: {}", e);
+                            panic!("Error evaluating transaction: {}", e);
+                        }
+                    }
+                }),
+        ))
+    }
+}
+
 impl ValidQuery for FindTransactionByHash {
     #[metrics(+"find_transaction_by_hash")]
     fn execute(&self, wsv: &WorldStateView) -> Result<TransactionQueryOutput, QueryExecutionFail> {

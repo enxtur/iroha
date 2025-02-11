@@ -152,6 +152,7 @@ impl ValidQuery for QueryBox {
             FindAllBlockHeaders,
             FindAllTransactions,
             FindTransactionsByAccountId,
+            FindTransactionsByAccountIdInvolved,
             FindPermissionTokensByAccountId,
             FindAllActiveTriggerIds,
             FindTriggersByDomainId,

@@ -121,6 +121,7 @@ pub mod model {
         FindBlockHeaderByHash(FindBlockHeaderByHash),
         FindAllTransactions(FindAllTransactions),
         FindTransactionsByAccountId(FindTransactionsByAccountId),
+        FindTransactionsByAccountIdInvolved(FindTransactionsByAccountIdInvolved),
         FindTransactionByHash(FindTransactionByHash),
         FindPermissionTokensByAccountId(FindPermissionTokensByAccountId),
         FindPermissionTokenSchema(FindPermissionTokenSchema),
@@ -1110,6 +1111,18 @@ pub mod transaction {
             pub account_id: EvaluatesTo<AccountId>,
         }
 
+        /// [`FindTransactionsByAccountIdInvolved`] Iroha Query finds all transactions included in a blockchain
+        /// for the account that are involved in the transactions
+        #[derive(Display)]
+        #[display(fmt = "Find all transactions for `{account_id}` account that are involved in the transactions")]
+        #[repr(transparent)]
+        // SAFETY: `FindTransactionsByAccountIdInvolved` has no trap representation in `EvaluatesTo<AccountId>`
+        #[ffi_type(unsafe {robust})]
+        pub struct FindTransactionsByAccountIdInvolved {
+            /// Signer's [`AccountId`] under which transactions should be found.
+            pub account_id: EvaluatesTo<AccountId>,
+        }
+
         /// [`FindTransactionByHash`] Iroha Query finds a transaction (if any)
         /// with corresponding hash value
         #[derive(Display)]
@@ -1131,12 +1144,25 @@ pub mod transaction {
         type Output = Vec<TransactionQueryOutput>;
     }
 
+    impl Query for FindTransactionsByAccountIdInvolved {
+        type Output = Vec<TransactionQueryOutput>;
+    }
+
     impl Query for FindTransactionByHash {
         type Output = TransactionQueryOutput;
     }
 
     impl FindTransactionsByAccountId {
         /// Construct [`FindTransactionsByAccountId`].
+        pub fn new(account_id: impl Into<EvaluatesTo<AccountId>>) -> Self {
+            Self {
+                account_id: account_id.into(),
+            }
+        }
+    }
+
+    impl FindTransactionsByAccountIdInvolved {
+        /// Construct [`FindTransactionsByAccountIdInvolved`].
         pub fn new(account_id: impl Into<EvaluatesTo<AccountId>>) -> Self {
             Self {
                 account_id: account_id.into(),
@@ -1153,7 +1179,7 @@ pub mod transaction {
 
     /// The prelude re-exports most commonly used traits, structs and macros from this crate.
     pub mod prelude {
-        pub use super::{FindAllTransactions, FindTransactionByHash, FindTransactionsByAccountId};
+        pub use super::{FindAllTransactions, FindTransactionByHash, FindTransactionsByAccountId, FindTransactionsByAccountIdInvolved};
     }
 }
 

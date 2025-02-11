@@ -214,6 +214,7 @@ types!(
     FindTotalAssetQuantityByAssetDefinitionId,
     FindTransactionByHash,
     FindTransactionsByAccountId,
+    FindTransactionsByAccountIdInvolved,
     FindTriggerById,
     FindTriggerKeyValueByIdAndKey,
     FindTriggersByDomainId,

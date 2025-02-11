@@ -141,6 +141,7 @@ mod seal {
         FindBlockHeaderByHash,
         FindAllTransactions,
         FindTransactionsByAccountId,
+        FindTransactionsByAccountIdInvolved,
         FindTransactionByHash,
         FindPermissionTokensByAccountId,
         FindPermissionTokenSchema,

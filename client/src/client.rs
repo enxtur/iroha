@@ -1713,6 +1713,13 @@ pub mod transaction {
         FindTransactionsByAccountId::new(account_id)
     }
 
+    /// Construct a query to retrieve transactions for account involved in
+    pub fn by_account_id_involved(
+        account_id: impl Into<EvaluatesTo<AccountId>>,
+    ) -> FindTransactionsByAccountIdInvolved {
+        FindTransactionsByAccountIdInvolved::new(account_id)
+    }
+
     /// Construct a query to retrieve transaction by hash
     pub fn by_hash(
         hash: impl Into<EvaluatesTo<HashOf<SignedTransaction>>>,

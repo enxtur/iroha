@@ -2099,6 +2099,14 @@
       }
     ]
   },
+  "FindTransactionsByAccountIdInvolved": {
+    "Struct": [
+      {
+        "name": "account_id",
+        "type": "EvaluatesTo<AccountId>"
+      }
+    ]
+  },
   "FindTriggerById": {
     "Struct": [
       {
