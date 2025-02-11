@@ -183,15 +183,27 @@ mod tests {
     static ALICE_ID: Lazy<AccountId> =
         Lazy::new(|| AccountId::from_str("alice@wonderland").expect("Valid"));
 
+    static BOB_KEYS: Lazy<KeyPair> = Lazy::new(|| KeyPair::generate().unwrap());
+    static BOB_ID: Lazy<AccountId> =
+        Lazy::new(|| AccountId::from_str("bob@wonderland").expect("Valid"));
+
     fn world_with_test_domains() -> World {
         let domain_id = DomainId::from_str("wonderland").expect("Valid");
         let mut domain = Domain::new(domain_id).build(&ALICE_ID);
         let account =
             Account::new(ALICE_ID.clone(), [ALICE_KEYS.public_key().clone()]).build(&ALICE_ID);
         assert!(domain.add_account(account).is_none());
+        let account =
+            Account::new(BOB_ID.clone(), [BOB_KEYS.public_key().clone()]).build(&ALICE_ID);
+        assert!(domain.add_account(account).is_none());
         let asset_definition_id = AssetDefinitionId::from_str("rose#wonderland").expect("Valid");
         assert!(domain
-            .add_asset_definition(AssetDefinition::quantity(asset_definition_id).build(&ALICE_ID))
+            .add_asset_definition(
+                AssetDefinition::quantity(asset_definition_id.clone()).build(&ALICE_ID)
+            )
+            .is_none());
+        assert!(domain
+            .add_asset_total_quantity(asset_definition_id, 100_u32)
             .is_none());
         World::with([domain], PeersIds::new())
     }
@@ -305,6 +317,103 @@ mod tests {
         Ok(wsv)
     }
 
+    fn wsv_with_test_transactions_with_other_account(
+        valid_tx_per_block: usize,
+    ) -> Result<WorldStateView> {
+        let kura = Kura::blank_kura_for_testing();
+        let mut wsv = WorldStateView::new(world_with_test_domains(), kura.clone());
+
+        let limits = TransactionLimits {
+            max_instruction_number: 1,
+            max_wasm_size_bytes: 0,
+        };
+        let huge_limits = TransactionLimits {
+            max_instruction_number: 1000,
+            max_wasm_size_bytes: 0,
+        };
+
+        wsv.config.transaction_limits = limits;
+
+        let topology = Topology::new(UniqueVec::new());
+
+        let asset_definition_id = AssetDefinitionId::from_str("rose#wonderland").expect("Valid");
+
+        {
+            let destination_id = AssetId::new(asset_definition_id.clone(), ALICE_ID.clone());
+            let mint_expr = MintExpr::new(1_u32, destination_id);
+
+            let tx = {
+                let instructions: [InstructionExpr; 1] = [InstructionExpr::from(mint_expr)];
+                let tx = TransactionBuilder::new(ALICE_ID.clone())
+                    .with_instructions(instructions)
+                    .sign(ALICE_KEYS.clone())?;
+                AcceptedTransaction::accept(tx, &huge_limits)?
+            };
+            let transactions = vec![tx; valid_tx_per_block];
+            let block = BlockBuilder::new(transactions.clone(), topology.clone(), Vec::new())
+                .chain(0, &mut wsv)
+                .sign(ALICE_KEYS.clone())?
+                .commit(&topology)
+                .expect("Block is valid");
+
+            wsv.apply(&block)?;
+            kura.store_block(block);
+        }
+        {
+            let source_id_box =
+                IdBox::AssetId(AssetId::new(asset_definition_id.clone(), ALICE_ID.clone()));
+            let transfer_expr = TransferExpr::new(source_id_box, 1_u32, BOB_ID.clone());
+
+            let mut metadata = UnlimitedMetadata::new();
+            metadata.insert(
+                Name::from_str("involved_accounts").unwrap(),
+                Value::Vec(vec![BOB_ID.clone().to_value()]),
+            );
+
+            let tx = {
+                let instructions: [InstructionExpr; 1] = [InstructionExpr::from(transfer_expr)];
+                let tx = TransactionBuilder::new(ALICE_ID.clone())
+                    .with_instructions(instructions)
+                    .with_metadata(metadata)
+                    .sign(ALICE_KEYS.clone())?;
+                AcceptedTransaction::accept(tx, &huge_limits)?
+            };
+            let transactions = vec![tx; valid_tx_per_block];
+            let block = BlockBuilder::new(transactions.clone(), topology.clone(), Vec::new())
+                .chain(0, &mut wsv)
+                .sign(ALICE_KEYS.clone())?
+                .commit(&topology)
+                .expect("Block is valid");
+
+            wsv.apply(&block)?;
+            kura.store_block(block);
+        }
+
+        {
+            let source_id_box =
+                IdBox::AssetId(AssetId::new(asset_definition_id.clone(), ALICE_ID.clone()));
+            let transfer_expr = TransferExpr::new(source_id_box, 1_u32, BOB_ID.clone());
+
+            let tx = {
+                let instructions: [InstructionExpr; 1] = [InstructionExpr::from(transfer_expr)];
+                let tx = TransactionBuilder::new(ALICE_ID.clone())
+                    .with_instructions(instructions)
+                    .sign(ALICE_KEYS.clone())?;
+                AcceptedTransaction::accept(tx, &huge_limits)?
+            };
+            let transactions = vec![tx; valid_tx_per_block];
+            let block = BlockBuilder::new(transactions.clone(), topology.clone(), Vec::new())
+                .chain(0, &mut wsv)
+                .sign(ALICE_KEYS.clone())?
+                .commit(&topology)
+                .expect("Block is valid");
+
+            wsv.apply(&block)?;
+            kura.store_block(block);
+        }
+        Ok(wsv)
+    }
+
     #[test]
     fn asset_store() -> Result<()> {
         let kura = Kura::blank_kura_for_testing();
@@ -401,6 +510,24 @@ mod tests {
             num_blocks
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn find_all_transactions_by_account_id_involved() -> Result<()> {
+        let wsv = wsv_with_test_transactions_with_other_account(1)?;
+        let txs = FindTransactionsByAccountIdInvolved::new(BOB_ID.clone())
+            .execute(&wsv)?
+            .collect::<Vec<_>>();
+        // let txs = FindAllTransactions.execute(&wsv)?.collect::<Vec<_>>();
+        assert_eq!(txs.len() as u64, 2);
+        assert!(txs.iter().any(|tx| tx.transaction.error.is_none()));
+        // for tx in txs {
+        //     if let Some(error) = tx.transaction.error {
+        //         println!("tx error: {:?}", error);
+        //         panic!("tx error: {:?}", error);
+        //     }
+        // }
         Ok(())
     }
 
