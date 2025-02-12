@@ -23,6 +23,7 @@ mod sorting;
 mod transfer_asset;
 mod triggers;
 mod tx_history;
+mod tx_involved;
 mod tx_rollback;
 mod unregister_peer;
 mod unstable_network;
