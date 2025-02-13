@@ -23,7 +23,8 @@ pub(crate) struct BlockTransactionRef(Arc<SignedBlock>, usize);
 
 impl BlockTransactionIter {
     fn new(block: Arc<SignedBlock>) -> Self {
-        Self(block, 0)
+        let n_transactions = block.payload().transactions.len();
+        Self(block, n_transactions)
     }
 }
 
@@ -31,13 +32,11 @@ impl Iterator for BlockTransactionIter {
     type Item = BlockTransactionRef;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.1 < self.0.payload().transactions.len() {
-            let res = Some(BlockTransactionRef(Arc::clone(&self.0), self.1));
-
-            self.1 += 1;
-            return res;
+        if self.1 != 0 {
+            self.1 -= 1;
+            return Some(BlockTransactionRef(Arc::clone(&self.0), self.1));
         }
-
+        
         None
     }
 }
@@ -63,6 +62,7 @@ impl ValidQuery for FindAllTransactions {
     ) -> Result<Box<dyn Iterator<Item = TransactionQueryOutput> + 'wsv>, QueryExecutionFail> {
         Ok(Box::new(
             wsv.all_blocks()
+                .rev()
                 .flat_map(BlockTransactionIter::new)
                 .map(|tx| TransactionQueryOutput {
                     block_hash: tx.block_hash(),
@@ -85,6 +85,7 @@ impl ValidQuery for FindTransactionsByAccountId {
 
         Ok(Box::new(
             wsv.all_blocks()
+                .rev()
                 .flat_map(BlockTransactionIter::new)
                 .filter(move |tx| *tx.authority() == account_id)
                 .map(|tx| TransactionQueryOutput {
@@ -219,6 +220,7 @@ impl ValidQuery for FindTransactionsByAccountIdInvolved {
 
         Ok(Box::new(
             wsv.all_blocks()
+                .rev()
                 .flat_map(BlockTransactionIter::new)
                 .filter_map(move |tx| {
                     match is_transaction_related_to_account(wsv, &tx, &account_id) {
